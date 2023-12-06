@@ -8,6 +8,7 @@ import cv2
 import os
 import numpy as np
 from PIL import Image
+import matplotlib.pyplot as plt
 from torchvision.transforms import functional as F
 
 class FootballFieldDataset(Dataset):
@@ -77,11 +78,48 @@ def validate(model, dataloader, criterion):
             total_loss += loss.item()
     return total_loss / len(dataloader)
 
+
+def iou_score(output, target):
+    output = torch.sigmoid(output)
+    output = torch.argmax(output, dim=1)
+    output = output.view(-1)
+    target = target.view(-1)
+
+    intersection = (output == target).float().sum()
+    union = output.numel()
+
+    iou = (intersection + 1e-6) / (union + 1e-6)
+    return iou.item()
+
+
+def dice_score(output, target):
+    output = torch.sigmoid(output)
+    output = torch.argmax(output, dim=1)
+    output = output.view(-1)
+    target = target.view(-1)
+
+    intersection = (output == target).float().sum()
+    dice = (2. * intersection + 1e-6) / (output.numel() + target.numel() + 1e-6)
+    return dice.item()
+
+
 def visualize(model, data_loader, num_images=5):
     model.eval()
-    images, masks = next(iter(data_loader))
+    images, _ = next(iter(data_loader))
     with torch.no_grad():
         preds = model(images)
+    preds = torch.argmax(preds, dim=1)
+    images = images.cpu().numpy()
+    preds = preds.cpu().numpy()
+    fig, ax = plt.subplots(nrows=num_images, ncols=2, figsize=(10, num_images * 5))
+    for i in range(num_images):
+        ax[i, 0].imshow(np.transpose(images[i], (1, 2, 0)))
+        ax[i, 1].imshow(preds[i], cmap='gray')
+        ax[i, 0].set_title("Original Image")
+        ax[i, 1].set_title("Predicted Mask")
+        ax[i, 0].axis('off')
+        ax[i, 1].axis('off')
+    plt.show()
 
 def main():
     dataset_root = 'segmentation_labeled_dataset'
@@ -112,8 +150,21 @@ def main():
     num_epochs = 25
     for epoch in range(num_epochs):
         train_loss = train_one_epoch(model, train_loader, optimizer, criterion)
-        val_loss = validate(model, val_loader, criterion)
-        print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss}, Val Loss: {val_loss}")
+        val_loss = 0
+        iou_total = 0
+        dice_total = 0
+        count = 0
+        for images, masks in val_loader:
+            outputs = model(images)
+            loss = criterion(outputs, masks)
+            val_loss += loss.item()
+            iou_total += iou_score(outputs, masks)
+            dice_total += dice_score(outputs, masks)
+            count += 1
+        val_loss /= count
+        avg_iou = iou_total / count
+        avg_dice = dice_total / count
+        print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss}, Val Loss: {val_loss}, IoU: {avg_iou}, Dice: {avg_dice}")
 
     visualize(model, val_loader)
 
