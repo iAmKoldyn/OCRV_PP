@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "ocrv-pp"
+version = "0.1.0"
+description = ""
+authors = ["iAmKoldyn"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+torch = "2.0.0"
+torchvision = "0.15.1"
+segmentation_models_pytorch = "0.3.3"
+opencv-python = "4.8.1.78"
+numpy = "1.23.5"
+Pillow = "9.3.0"
+matplotlib = "3.8.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
