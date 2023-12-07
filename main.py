@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 from torchvision.transforms import functional as F
 
 
+
+
 class FootballFieldDataset(Dataset):
     def __init__(self, image_dir, mask_dir, transform=None):
         self.image_dir = image_dir
@@ -111,6 +113,23 @@ def dice_score(output, target):
     return dice.item()
 
 
+def evaluate_model(model, dataloader, criterion):
+    model.eval()
+    total_loss = 0
+    iou_total = 0
+    dice_total = 0
+    count = 0
+    with torch.no_grad():
+        for images, masks in dataloader:
+            outputs = model(images)
+            loss = criterion(outputs, masks)
+            total_loss += loss.item()
+            iou_total += iou_score(outputs, masks)
+            dice_total += dice_score(outputs, masks)
+            count += 1
+    return total_loss / count, iou_total / count, dice_total / count
+
+
 def post_process_mask(mask):
     mask = mask.astype(np.uint8)
 
@@ -118,6 +137,7 @@ def post_process_mask(mask):
     opening = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=2)
     closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel, iterations=2)
     return closing
+
 
 def visualize(model, data_loader, num_images=5):
     model.eval()
@@ -192,6 +212,17 @@ def main():
 
     if best_model_path:
         model.load_state_dict(torch.load(best_model_path))
+    
+    test_dataset = FootballFieldDataset(
+        image_dir=os.path.join(dataset_root, 'test', 'JPEGImages'),
+        mask_dir=os.path.join(dataset_root, 'test', 'SegmentationClass'),
+        transform=transform
+    )
+    test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
+
+    test_loss, test_iou, test_dice = evaluate_model(model, test_loader, criterion)
+    print(f"Test Loss: {test_loss}, Test IoU: {test_iou}, Test Dice: {test_dice}")
+
 
     visualize_results = True
     if visualize_results:
