@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from torchvision.transforms import functional as F
 
 def post_process_mask(mask):
-    mask = mask.astype(np.uint8)  # Ensure this line is present and correctly converting the mask
+    mask = mask.astype(np.uint8)
 
     kernel = np.ones((3, 3), np.uint8)
     opening = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=2)
