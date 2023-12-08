@@ -1,1 +1,5 @@
-/segmentation_labeled_dataset
+/segmentation_labeled_dataset/
+/segmentation_labeled_dataset_V2/
+/segmentation_labeled_dataset_V1/
+/remove.py
+/__pycache__

@@ -68,8 +68,8 @@ def train_one_epoch(model, dataloader, optimizer, criterion):
 
 def get_model(num_classes=4):
     # model = smp.PSPNet(
-    # model = smp.DeepLabV3(
-    model = smp.Unet(
+    model = smp.DeepLabV3(
+    # model = smp.Unet(
         encoder_name="resnet34", 
         encoder_weights="imagenet", 
         in_channels=3, 
@@ -164,7 +164,7 @@ def visualize(model, data_loader, num_images=5):
 
 
 def main():
-    dataset_root = 'segmentation_labeled_dataset'
+    dataset_root = 'segmentation_labeled_dataset_V1'
     transform = transforms.Compose([
         transforms.Resize((256, 256)), 
         transforms.ToTensor()
