@@ -3,3 +3,8 @@
 /segmentation_labeled_dataset_V1/
 /remove.py
 /__pycache__
+*.pyc
+mvc/segmentation_labeled_dataset_V2/**/*.png
+mvc/segmentation_labeled_dataset_V1/**/*.png
+mvc/segmentation_labeled_dataset/**/*.png
+
