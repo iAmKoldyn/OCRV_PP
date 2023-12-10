@@ -12,8 +12,6 @@ import matplotlib.pyplot as plt
 from torchvision.transforms import functional as F
 
 
-
-
 class FootballFieldDataset(Dataset):
     def __init__(self, image_dir, mask_dir, transform=None):
         self.image_dir = image_dir
@@ -39,7 +37,7 @@ class FootballFieldDataset(Dataset):
 
         mask = np.where(mask == 113, 1, mask)
         mask = np.where(mask == 169, 2, mask)
-        mask = np.where(mask == 227, 2, mask)
+        mask = np.where(mask == 227, 3, mask)
 
         unique_values = np.unique(mask)
         print(f"Unique mask values: {unique_values}")
@@ -53,10 +51,11 @@ class FootballFieldDataset(Dataset):
         return image, mask
 
 
-def train_one_epoch(model, dataloader, optimizer, criterion):
+def train_one_epoch(model, dataloader, optimizer, criterion, device):
     model.train()
     total_loss = 0
     for images, masks in dataloader:
+        images, masks = images.to(device), masks.to(device)
         optimizer.zero_grad()
         outputs = model(images)
         loss = criterion(outputs, masks)
@@ -70,7 +69,7 @@ def get_model(num_classes=4):
     # model = smp.PSPNet(
     model = smp.DeepLabV3(
     # model = smp.Unet(
-        encoder_name="resnet34", 
+        encoder_name="resnet50", 
         encoder_weights="imagenet", 
         in_channels=3, 
         classes=num_classes)
@@ -78,11 +77,12 @@ def get_model(num_classes=4):
     return model
 
 
-def validate(model, dataloader, criterion):
+def validate(model, dataloader, criterion, device):
     model.eval()
     total_loss = 0
     with torch.no_grad():
         for images, masks in dataloader:
+            images, masks = images.to(device), masks.to(device)
             outputs = model(images)
             loss = criterion(outputs, masks)
             total_loss += loss.item()
@@ -113,7 +113,7 @@ def dice_score(output, target):
     return dice.item()
 
 
-def evaluate_model(model, dataloader, criterion):
+def evaluate_model(model, dataloader, criterion, device):
     model.eval()
     total_loss = 0
     iou_total = 0
@@ -121,6 +121,7 @@ def evaluate_model(model, dataloader, criterion):
     count = 0
     with torch.no_grad():
         for images, masks in dataloader:
+            images, masks = images.to(device), masks.to(device)
             outputs = model(images)
             loss = criterion(outputs, masks)
             total_loss += loss.item()
@@ -133,38 +134,49 @@ def evaluate_model(model, dataloader, criterion):
 def post_process_mask(mask):
     mask = mask.astype(np.uint8)
 
-    kernel = np.ones((3, 3), np.uint8)
+    kernel = np.ones((4, 4), np.uint8)
     opening = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=2)
     closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel, iterations=2)
     return closing
 
 
-def visualize(model, data_loader, num_images=5):
+def visualize(model, data_loader, device, num_images=5):
     model.eval()
-    images, _ = next(iter(data_loader))
-    with torch.no_grad():
-        preds = model(images)
-    preds = torch.argmax(preds, dim=1).cpu().numpy()
-    images = images.cpu().numpy()
+    fig, ax = plt.subplots(nrows=num_images, ncols=4, figsize=(20, num_images * 5))
 
-    num_images = min(num_images, len(images))
-    fig, ax = plt.subplots(nrows=num_images, ncols=3, figsize=(15, num_images * 5))
-    for i in range(num_images):
-        processed_mask = post_process_mask(preds[i])
-        ax[i, 0].imshow(np.transpose(images[i], (1, 2, 0)))
-        ax[i, 1].imshow(preds[i], cmap='gray')
-        ax[i, 2].imshow(processed_mask, cmap='gray')
-        ax[i, 0].set_title("Original Image")
-        ax[i, 1].set_title("Predicted Mask")
-        ax[i, 2].set_title("Post Processed Mask")
-        ax[i, 0].axis('off')
-        ax[i, 1].axis('off')
-        ax[i, 2].axis('off')
+    for i, (images, gt_masks) in enumerate(data_loader):
+        if i >= num_images:
+            break
+
+        images = images.to(device)
+        gt_masks = gt_masks.cpu().numpy()
+
+        with torch.no_grad():
+            preds = model(images)
+        preds = torch.argmax(preds, dim=1).cpu().numpy()
+        images = images.cpu().numpy()
+
+        for j in range(len(images)):
+            ax[i, 0].imshow(np.transpose(images[j], (1, 2, 0)))
+            ax[i, 1].imshow(gt_masks[j], cmap='gray')
+            ax[i, 2].imshow(preds[j], cmap='gray')
+            processed_mask = post_process_mask(preds[j])
+            ax[i, 3].imshow(processed_mask, cmap='gray')
+
+            ax[i, 0].set_title("Original Image")
+            ax[i, 1].set_title("Ground Truth Mask")
+            ax[i, 2].set_title("Predicted Mask")
+            ax[i, 3].set_title("Post Processed Mask")
+            for k in range(4):
+                ax[i, k].axis('off')
+
+    plt.tight_layout()
     plt.show()
 
 
 def main():
-    dataset_root = 'segmentation_labeled_dataset_V1'
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dataset_root = 'segmentation_labeled_dataset'
     transform = transforms.Compose([
         transforms.Resize((256, 256)), 
         transforms.ToTensor()
@@ -181,25 +193,23 @@ def main():
         transform=transform
     )
 
-    train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False)
 
-    model = get_model(num_classes=4)
-    criterion = nn.CrossEntropyLoss()
-    # optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    # optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    train_loader = DataLoader(train_dataset, batch_size=12, shuffle=True, num_workers=10, pin_memory=True)
+    val_loader = DataLoader(val_dataset, batch_size=12, shuffle=False, num_workers=10, pin_memory=True)
+
+
+    model = get_model(num_classes=4).to(device)
+    criterion = nn.CrossEntropyLoss().to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
-    # optimizer = optim.SGD(model.parameters(), lr=1e-4, momentum=0.9)
-    # optimizer = optim.RMSprop(model.parameters(), lr=1e-4)
 
 
     best_val_loss = float('inf')
     best_model_path = ""
-    num_epochs = 25
+    num_epochs = 50
 
     for epoch in range(num_epochs):
-        train_loss = train_one_epoch(model, train_loader, optimizer, criterion)
-        val_loss = validate(model, val_loader, criterion)
+        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
+        val_loss = validate(model, val_loader, criterion, device)
         print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss}, Val Loss: {val_loss}")
 
         if val_loss < best_val_loss:
@@ -220,13 +230,14 @@ def main():
     )
     test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
 
-    test_loss, test_iou, test_dice = evaluate_model(model, test_loader, criterion)
+    test_loss, test_iou, test_dice = evaluate_model(model, test_loader, criterion, device)
     print(f"Test Loss: {test_loss}, Test IoU: {test_iou}, Test Dice: {test_dice}")
 
 
     visualize_results = True
     if visualize_results:
-        visualize(model, val_loader)
+        visualize(model, test_loader, device, num_images=5)
+
 
 if __name__ == "__main__":
     main()
